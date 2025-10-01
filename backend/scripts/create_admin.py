@@ -1,106 +1,92 @@
 """
-Script para crear el primer usuario administrador en el sistema.
-Uso: python create_admin.py --email admin@example.com --password securepassword --name "Nombre Completo"
+Script para actualizar un usuario existente a administrador
 """
 import sys
 import os
 import argparse
 from pathlib import Path
 
-# AGREGAR ESTO AL INICIO - Cargar variables de entorno PRIMERO
+
 sys.path.append(str(Path(__file__).parent.parent))
 
-# Cargar .env manualmente antes de cualquier import
+
 from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent / '.env'
 load_dotenv(env_path)
 
-# Verificar que las variables críticas estén cargadas
+
 if not os.getenv("SUPABASE_URL") or not os.getenv("SUPABASE_KEY"):
     print("❌ Error: Variables SUPABASE_URL y SUPABASE_KEY no encontradas")
-    print("   Asegúrate de tener un archivo .env en la raíz del proyecto")
     sys.exit(1)
 
-# AHORA importar las dependencias que usan config
-from app.db.supabase import get_supabase_client
-from app.schemas.user import UserRole
+from supabase import create_client
 
-def create_admin_user(email: str, password: str, full_name: str):
+def update_to_admin(email: str, full_name: str):
     """
-    Crea un usuario administrador en Supabase.
+    Actualiza un usuario existente a administrador
     """
-    print(f"Creando usuario administrador: {email}")
+    print(f"🎯 Actualizando usuario a administrador: {email}")
     
     try:
-        # Inicializar cliente de Supabase
-        supabase = get_supabase_client()
         
-        # Verificar si el usuario ya existe
-        response = supabase.table("users").select("*").eq("email", email).execute()
-        if response.data:
-            print(f"El usuario {email} ya existe en la base de datos.")
+        supabase_url = os.getenv("SUPABASE_URL")
+        supabase_key = os.getenv("SUPABASE_KEY")
+        
+        supabase = create_client(supabase_url, supabase_key)
+        print("✅ Conectado a Supabase")
+        
+        
+        user_response = supabase.table("user_profiles").select("*").eq("email", email).execute()
+        
+        if not user_response.data:
+            print(f"❌ El usuario {email} no existe en user_profiles")
             return False
         
-        # Crear usuario en Supabase Auth
-        try:
-            auth_response = supabase.auth.admin.create_user({
-                "email": email,
-                "password": password,
-                "email_confirm": True,  # Confirmar email automáticamente
-                "user_metadata": {"name": full_name}  # Agregar metadata
-            })
-            
-            if hasattr(auth_response, 'user') and auth_response.user:
-                user_id = auth_response.user.id
-                print(f"Usuario creado en Supabase Auth con ID: {user_id}")
-            else:
-                print(f"Error: Respuesta de auth inesperada: {auth_response}")
-                return False
-                
-        except Exception as e:
-            print(f"Error al crear usuario en Supabase Auth: {str(e)}")
-            return False
+        user_data = user_response.data[0]
+        user_id = user_data["id"]
         
-        # Incluir registro en la tabla users
-        user_data = {
-            "id": user_id,
-            "email": email,
+        print(f"✅ Usuario encontrado: {user_id}")
+        print(f"   Rol actual: {user_data.get('role', 'No definido')}")
+        
+        
+        update_response = supabase.table("user_profiles").update({
             "full_name": full_name,
-            "role": UserRole.ADMIN.value,
-            "is_active": True
-        }
+            "role": "admin"
+        }).eq("id", user_id).execute()
         
-        response = supabase.table("users").insert(user_data).execute()
-        
-        if response.data:
-            print(f"✅ Usuario administrador creado exitosamente: {email}")
-            print(f"   ID: {user_id}")
-            print(f"   Nombre: {full_name}")
-            print(f"   Rol: {UserRole.ADMIN.value}")
+        if update_response.data:
+            print("✅ Usuario actualizado a administrador exitosamente")
+            print(f"\n📋 DATOS ACTUALIZADOS:")
+            print(f"   👤 Email: {email}")
+            print(f"   👤 Nombre: {full_name}")
+            print(f"   🔑 ID: {user_id}")
+            print(f"   🎯 Nuevo rol: admin")
+            print(f"   ✅ Estado: Activo")
             return True
         else:
-            print(f"Error al insertar en tabla users: {response}")
+            print("❌ Error actualizando usuario")
             return False
-            
+        
     except Exception as e:
-        print(f"Error al crear usuario administrador: {str(e)}")
+        print(f"❌ Error: {str(e)}")
         return False
 
-def main():
-    parser = argparse.ArgumentParser(description="Crear usuario administrador")
-    parser.add_argument("--email", required=True, help="Correo electrónico del administrador")
-    parser.add_argument("--password", required=True, help="Contraseña del administrador")
-    parser.add_argument("--name", required=True, help="Nombre completo del administrador")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Actualizar usuario a administrador")
+    parser.add_argument("--email", required=True, help="Email del usuario a actualizar")
+    parser.add_argument("--name", required=True, help="Nombre completo")
     
     args = parser.parse_args()
     
-    success = create_admin_user(args.email, args.password, args.name)
-    if success:
-        print("🎉 Usuario administrador creado exitosamente.")
+    print("🚀 Actualizando usuario a administrador...")
+    print("=" * 50)
+    
+    if update_to_admin(args.email, args.name):
+        print("=" * 50)
+        print("🎉 ¡USUARIO ACTUALIZADO A ADMINISTRADOR!")
+        print("💡 Ya puedes iniciar sesión con permisos de administrador")
         sys.exit(0)
     else:
-        print("💥 Error al crear usuario administrador.")
+        print("=" * 50)
+        print("💥 Error actualizando usuario")
         sys.exit(1)
-
-if __name__ == "__main__":
-    main()
